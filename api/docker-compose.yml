@@ -1,0 +1,28 @@
+version: "3.8"
+name: family-kitchen-api
+services:
+  family-kitchen:
+    container_name: family-kitchen
+    build: .
+    ports:
+      - "5004:5004"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - PORT=5004
+      - MONGO_URI=mongodb://admin:password@mongodb:27017/family_kitchen?authSource=admin
+      - JWT_SECRET=family_kitchen_jwt_secret_dev_only
+      - JWT_EXPIRE=30d
+    networks:
+      - mongo_mongo-network
+
+networks:
+  mongo_mongo-network:
+    external: true
+
+
+
+
+
