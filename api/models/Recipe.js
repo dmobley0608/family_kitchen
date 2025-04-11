@@ -63,8 +63,15 @@ const RecipeSchema = new mongoose.Schema({
     },
     image: {
         url: String,
-        publicId: String, // For Cloudinary ID reference
-        localPath: String // For local file storage reference
+        id: String,
+        filename: String,
+        mimetype: String,
+        size: Number,
+        status: {
+            type: String,
+            enum: ['pending', 'success', 'failed'],
+            default: 'pending'
+        }
     }
 }, {
     timestamps: true

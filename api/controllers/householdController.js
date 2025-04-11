@@ -119,7 +119,7 @@ exports.joinHousehold = async (req, res) => {
 // @access  Private (owner only)
 exports.removeMember = async (req, res) => {
     try {
-        console.log(req.params.userId);
+       
         const household = await Household.findById(req.user.household)
         .populate('members', 'name email');
 

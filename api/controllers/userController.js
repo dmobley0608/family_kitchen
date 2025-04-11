@@ -71,7 +71,7 @@ exports.removeAccount = async (req, res) => {
         //Change Household Owner if needed
         if (user.household.owner.toString() === user._id.toString()) {
             const newOwner = await User.findOne({ household: user.household }).sort({ createdAt: 1 });
-            console.log(newOwner)
+        
             if (newOwner) {
                 newOwner.household.owner = newOwner._id;
                 await newOwner.save();
@@ -79,7 +79,7 @@ exports.removeAccount = async (req, res) => {
                 await Household.findByIdAndDelete(user.household._id);
             }
         }
-       
+
 
         res.json({ message: 'User account removed successfully' });
     } catch (error) {

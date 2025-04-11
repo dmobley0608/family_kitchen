@@ -40,9 +40,17 @@ app.use('/api/ingredients', require('./routes/ingredientRoutes'));
 app.use('/api/categories', require('./routes/categoryRoutes'));
 app.use('/api/invitations', require('./routes/invitationRoutes'));
 
-// Root route
-app.get('/', (req, res) => {
-    res.send('Family Kitchen API is running');
+// Serve static files from the public directory
+app.use(express.static(path.join(__dirname, 'public')));
+
+
+// Catch-all route for any request that doesn't start with /api
+app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api')) {
+        res.sendFile(path.join(__dirname, 'public/index.html'));
+    } else {
+        res.status(404).json({ message: 'API endpoint not found' });
+    }
 });
 
 // Start server

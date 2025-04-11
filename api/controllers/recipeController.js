@@ -4,7 +4,7 @@ const Ingredient = require('../models/Ingredient');
 const Category = require('../models/Category');
 const fs = require('fs').promises;
 const path = require('path');
-const { cloudinary, useCloudinary } = require('../utils/fileUpload');
+const { getImageUrl, deleteImage, processPendingUpload, pendingUploads } = require('../utils/fileUpload');
 
 // Controller methods
 const recipeController = {
@@ -59,52 +59,36 @@ const recipeController = {
 
     // Create a new recipe
     createRecipe: async (req, res) => {
-        // Parse JSON strings if they exist (from multipart form data)
-        let title = req.body.title;
-        let ingredients = req.body.ingredients;
-        let instructions = req.body.instructions;
-        let isPrivate = req.body.isPrivate;
-        let category = req.body.category;
-        let prepTime = req.body.prepTime;
-        let cookTime = req.body.cookTime;
-
-        // Parse JSON strings if they came from form data
         try {
-            if (typeof ingredients === 'string') {
-                ingredients = JSON.parse(ingredients);
-            }
+            // Parse JSON strings if they exist (from multipart form data)
+            let title = req.body.title;
+            let ingredients = req.body.ingredients;
+            let instructions = req.body.instructions;
+            let isPrivate = req.body.isPrivate;
+            let category = req.body.category;
+            let prepTime = req.body.prepTime;
+            let cookTime = req.body.cookTime;
 
-            if (typeof isPrivate === 'string') {
-                isPrivate = isPrivate === 'true';
-            }
-        } catch (error) {
-            console.error('Error parsing form data:', error);
-            return res.status(400).json({ message: 'Invalid JSON data in form' });
-        }
-
-        if (!title || !ingredients || !instructions || !category) {
-            // Clean up the uploaded file if validation fails
-            if (req.file && !useCloudinary) {
-                try {
-                    await fs.unlink(req.file.path);
-                } catch (unlinkErr) {
-                    console.error('Error deleting file:', unlinkErr);
+            // Parse JSON strings if they came from form data
+            try {
+                if (typeof ingredients === 'string') {
+                    ingredients = JSON.parse(ingredients);
                 }
-            }
-            return res.status(400).json({ message: 'Please provide title, ingredients, instructions, and category' });
-        }
 
-        try {
+                if (typeof isPrivate === 'string') {
+                    isPrivate = isPrivate === 'true';
+                }
+            } catch (error) {
+                console.error('Error parsing form data:', error);
+                return res.status(400).json({ message: 'Invalid JSON data in form' });
+            }
+
+            if (!title || !ingredients || !instructions || !category) {
+                return res.status(400).json({ message: 'Please provide title, ingredients, instructions, and category' });
+            }
+
             // Check if user has a household
             if (!req.user.household) {
-                // Clean up the uploaded file if user doesn't have a household
-                if (req.file && !useCloudinary) {
-                    try {
-                        await fs.unlink(req.file.path);
-                    } catch (unlinkErr) {
-                        console.error('Error deleting file:', unlinkErr);
-                    }
-                }
                 return res.status(400).json({ message: 'You need to join a household to create recipes' });
             }
 
@@ -157,25 +141,19 @@ const recipeController = {
                 return res.status(400).json({ message: 'Invalid category format' });
             }
 
-            // Prepare image data if file was uploaded
+            // Handle image if uploaded
             let imageData = {};
-            if (req.file) {
-                if (useCloudinary) {
-                    // The file is already uploaded to Cloudinary by the CloudinaryStorage
-                    imageData = {
-                        url: req.file.path, // CloudinaryStorage puts the URL in path
-                        publicId: req.file.filename, // CloudinaryStorage puts the public ID in filename
-                    };
-                } else {
-                    // For local storage, store the relative path
-                    const relativePath = `/uploads/${path.basename(req.file.path)}`;
-                    imageData = {
-                        url: relativePath,
-                        localPath: req.file.path
-                    };
-                }
+            if (req.file && req.file.tempData) {
+                imageData = {
+                    url: req.file.tempData.url,
+                    filename: req.file.tempData.filename,
+                    mimetype: req.file.tempData.mimetype,
+                    size: req.file.tempData.size,
+                    status: 'pending'
+                };
             }
 
+            // Create the recipe
             const newRecipe = new Recipe({
                 title,
                 ingredients: processedIngredients,
@@ -191,6 +169,24 @@ const recipeController = {
 
             const savedRecipe = await newRecipe.save();
 
+            // Process pending upload if exists
+            if (req.file && req.file.tempId) {
+                // Update the Map with actual recipe ID
+                const { tempId } = req.file;
+                const fileInfo = pendingUploads.get(tempId);
+
+                if (fileInfo) {
+                    pendingUploads.delete(tempId);
+                    pendingUploads.set(savedRecipe._id.toString(), fileInfo);
+
+                    // Trigger background processing
+                    setTimeout(() => {
+                        processPendingUpload(savedRecipe._id.toString())
+                            .catch(err => console.error('Background upload failed:', err));
+                    }, 100);
+                }
+            }
+
             // Populate household, user, ingredient, and category data
             const populatedRecipe = await Recipe.findById(savedRecipe._id)
                 .populate('household', 'name')
@@ -200,161 +196,172 @@ const recipeController = {
 
             res.status(201).json(populatedRecipe);
         } catch (error) {
-            // Clean up the uploaded file if there's an error
-            if (req.file && !useCloudinary) {
-                try {
-                    await fs.unlink(req.file.path);
-                } catch (unlinkErr) {
-                    console.error('Error deleting file:', unlinkErr);
-                }
-            }
-            res.status(500).json({ message: 'Server Error', error: error.message });
+            console.error('Recipe creation error:', error);
+            res.status(400).json({ error: error.message });
         }
     },
 
     // Update a recipe
     updateRecipe: async (req, res) => {
         try {
+            const { id } = req.params;
+
             // Parse JSON strings if they exist (from multipart form data)
+            let title = req.body.title;
             let ingredients = req.body.ingredients;
+            let instructions = req.body.instructions;
+            let isPrivate = req.body.isPrivate;
             let category = req.body.category;
+            let prepTime = req.body.prepTime;
+            let cookTime = req.body.cookTime;
 
-            // Parse any JSON strings that came from form data
-            if (typeof ingredients === 'string') {
-                try {
+            // Parse JSON strings if they came from form data
+            try {
+                if (typeof ingredients === 'string') {
                     ingredients = JSON.parse(ingredients);
-                } catch (e) {
-                    console.error('Error parsing ingredients JSON:', e);
-                    return res.status(400).json({ message: 'Invalid ingredients format' });
                 }
+
+                if (typeof isPrivate === 'string') {
+                    isPrivate = isPrivate === 'true';
+                }
+            } catch (error) {
+                console.error('Error parsing form data:', error);
+                return res.status(400).json({ message: 'Invalid JSON data in form' });
             }
 
-            const otherFields = { ...req.body };
-            delete otherFields.ingredients;
-            delete otherFields.category;
+            if (!title || !ingredients || !instructions || !category) {
+                return res.status(400).json({ message: 'Please provide title, ingredients, instructions, and category' });
+            }
 
-            let updateData = { ...otherFields };
+            // Find the existing recipe
+            const existingRecipe = await Recipe.findById(id);
+            if (!existingRecipe) {
+                return res.status(404).json({ error: 'Recipe not found' });
+            }
 
-            // If ingredients are being updated
-            if (ingredients) {
-                // Process ingredients - create any that don't exist
-                const processedIngredients = await Promise.all(
-                    ingredients.map(async ({ name, quantity, unit }) => {
-                        // Handle both name string and ingredient ID
-                        let ingredient;
+            // Process ingredients - create any that don't exist
+            const processedIngredients = await Promise.all(
+                ingredients.map(async (item) => {
+                    // Handle different formats of ingredient data
+                    let name, quantity, unit;
 
-                        if (typeof name === 'string') {
-                            const normalizedName = name.toLowerCase().trim();
-                            ingredient = await Ingredient.findOne({ name: normalizedName });
-
-                            if (!ingredient) {
-                                ingredient = await Ingredient.create({ name: normalizedName });
-                            }
+                    if (item.name) {
+                        name = item.name;
+                        quantity = item.quantity;
+                        unit = item.unit;
+                    } else if (item.ingredient && typeof item.ingredient === 'object' && item.ingredient.name) {
+                        name = item.ingredient.name;
+                        quantity = item.quantity;
+                        unit = item.unit;
+                    } else if (item.ingredient && mongoose.Types.ObjectId.isValid(item.ingredient)) {
+                        // If ingredient is already an ObjectId, find it to get the name
+                        const ingredientDoc = await Ingredient.findById(item.ingredient);
+                        if (ingredientDoc) {
+                            return {
+                                ingredient: item.ingredient,
+                                quantity: item.quantity,
+                                unit: item.unit
+                            };
                         } else {
-                            // If an ID is provided instead of a name
-                            ingredient = await Ingredient.findById(name);
-                            if (!ingredient) {
-                                throw new Error(`Ingredient with ID ${name} not found`);
-                            }
-                        }
-
-                        return {
-                            ingredient: ingredient._id,
-                            quantity,
-                            unit
-                        };
-                    })
-                );
-
-                updateData.ingredients = processedIngredients;
-            }
-
-            // If category is being updated
-            if (category) {
-                // Process category - create it if it doesn't exist
-                let categoryObj;
-                if (typeof category === 'string') {
-                    // First, check if the string is a valid MongoDB ObjectId
-                    const isValidObjectId = mongoose.Types.ObjectId.isValid(category);
-
-                    if (isValidObjectId) {
-                        // If it's a valid ObjectId, try to find the category by ID
-                        categoryObj = await Category.findById(category);
-
-                        // If no category found with this ID, return error
-                        if (!categoryObj) {
-                            return res.status(404).json({ message: 'Category not found with provided ID' });
+                            throw new Error('Ingredient reference not found in database');
                         }
                     } else {
-                        // Not a valid ObjectId, so treat it as a category name
-                        const normalizedCategoryName = category.toLowerCase().trim();
-                        categoryObj = await Category.findOne({ name: normalizedCategoryName });
+                        throw new Error('Invalid ingredient format');
+                    }
 
-                        if (!categoryObj) {
-                            categoryObj = await Category.create({ name: normalizedCategoryName });
-                        }
+                    // Normalize ingredient name (lowercase and trim)
+                    const normalizedName = name.toLowerCase().trim();
+
+                    // Find or create the ingredient
+                    let ingredient = await Ingredient.findOne({ name: normalizedName });
+
+                    if (!ingredient) {
+                        ingredient = await Ingredient.create({ name: normalizedName });
+                    }
+
+                    return {
+                        ingredient: ingredient._id,
+                        quantity,
+                        unit
+                    };
+                })
+
+            );
+
+            // Process category - create it if it doesn't exist
+            let categoryObj;
+            if (typeof category === 'string') {
+                // First, check if the string is a valid MongoDB ObjectId
+                const isValidObjectId = mongoose.Types.ObjectId.isValid(category);
+
+                if (isValidObjectId) {
+                    // If it's a valid ObjectId, try to find the category by ID
+                    categoryObj = await Category.findById(category);
+
+                    // If no category found with this ID, return error
+                    if (!categoryObj) {
+                        return res.status(404).json({ message: 'Category not found with provided ID' });
                     }
                 } else {
-                    // If it's not a string (e.g., it might be an object with category details)
-                    return res.status(400).json({ message: 'Invalid category format' });
-                }
+                    // Not a valid ObjectId, so treat it as a category name
+                    const normalizedCategoryName = category.toLowerCase().trim();
+                    categoryObj = await Category.findOne({ name: normalizedCategoryName });
 
-                updateData.category = categoryObj._id;
-            }
-
-            // Handle image update if there's a new image
-            if (req.file) {
-                const recipe = await Recipe.findById(req.params.id);
-
-                // Delete old image if it exists
-                if (recipe.image) {
-                    if (recipe.image.publicId && useCloudinary) {
-                        await cloudinary.uploader.destroy(recipe.image.publicId);
-                    } else if (recipe.image.localPath) {
-                        try {
-                            await fs.unlink(recipe.image.localPath);
-                        } catch (err) {
-                            console.error('Error deleting old image:', err);
-                        }
+                    if (!categoryObj) {
+                        categoryObj = await Category.create({ name: normalizedCategoryName });
                     }
                 }
+            } else {
+                // If it's not a string (e.g., it might be an object with category details)
+                return res.status(400).json({ message: 'Invalid category format' });
+            }
 
-                // Update with new image
-                if (useCloudinary) {
-                    updateData.image = {
-                        url: req.file.path,
-                        publicId: req.file.filename
-                    };
-                } else {
-                    const relativePath = `/uploads/${path.basename(req.file.path)}`;
-                    updateData.image = {
-                        url: relativePath,
-                        localPath: req.file.path
-                    };
-                }
-            } else if (req.body.removeImage === 'true') {
-                // Handle explicit image removal
-                const recipe = await Recipe.findById(req.params.id);
+            // Handle image if uploaded
+            let imageData = existingRecipe.image || {};
+            if (req.file && req.file.tempData) {
+                imageData = {
+                    url: req.file.tempData.url,
+                    filename: req.file.tempData.filename,
+                    mimetype: req.file.tempData.mimetype,
+                    size: req.file.tempData.size,
+                    status: 'pending'
+                };
 
-                // Delete the image file if it exists
-                if (recipe.image) {
-                    if (recipe.image.publicId && useCloudinary) {
-                        await cloudinary.uploader.destroy(recipe.image.publicId);
-                    } else if (recipe.image.localPath) {
-                        try {
-                            await fs.unlink(recipe.image.localPath);
-                        } catch (err) {
-                            console.error('Error deleting image file:', err);
-                        }
+                // Process pending upload
+                if (req.file.tempId) {
+                    const { tempId } = req.file;
+                    const fileInfo = pendingUploads.get(tempId);
+
+                    if (fileInfo) {
+                        pendingUploads.delete(tempId);
+                        pendingUploads.set(id, fileInfo);
+
+                        setTimeout(() => {
+                            processPendingUpload(id)
+                                .catch(err => console.error('Background upload failed:', err));
+                        }, 100);
                     }
                 }
-
-                // Set image field to null/undefined
-                updateData.image = null;
+                  //Delete Old Imgage
+                if (existingRecipe.image && existingRecipe.image.filename) {
+                    await deleteImage(existingRecipe.image.filename);
+                }
             }
+
+            // Update recipe
+            const updateData = {
+                title,
+                ingredients: processedIngredients,
+                instructions,
+                category: categoryObj._id,
+                isPrivate: isPrivate || false,
+                prepTime,
+                cookTime,
+                image: Object.keys(imageData).length > 0 ? imageData : existingRecipe.image
+            };
 
             const updatedRecipe = await Recipe.findByIdAndUpdate(
-                req.params.id,
+                id,
                 updateData,
                 { new: true, runValidators: true }
             ).populate('household', 'name')
@@ -362,29 +369,10 @@ const recipeController = {
                 .populate('ingredients.ingredient', 'name')
                 .populate('category', 'name');
 
-            if (!updatedRecipe) {
-                // Clean up uploaded file if recipe not found
-                if (req.file && !useCloudinary) {
-                    try {
-                        await fs.unlink(req.file.path);
-                    } catch (unlinkErr) {
-                        console.error('Error deleting file:', unlinkErr);
-                    }
-                }
-                return res.status(404).json({ message: 'Recipe not found' });
-            }
-
-            res.json(updatedRecipe);
+            res.status(200).json(updatedRecipe);
         } catch (error) {
-            // Clean up uploaded file if error occurs
-            if (req.file && !useCloudinary) {
-                try {
-                    await fs.unlink(req.file.path);
-                } catch (unlinkErr) {
-                    console.error('Error deleting file:', unlinkErr);
-                }
-            }
-            res.status(500).json({ message: 'Server Error', error: error.message });
+            console.error('Recipe update error:', error);
+            res.status(400).json({ error: error.message });
         }
     },
 
@@ -398,16 +386,8 @@ const recipeController = {
             }
 
             // Delete associated image if it exists
-            if (recipe.image) {
-                if (recipe.image.publicId && useCloudinary) {
-                    await cloudinary.uploader.destroy(recipe.image.publicId);
-                } else if (recipe.image.localPath) {
-                    try {
-                        await fs.unlink(recipe.image.localPath);
-                    } catch (err) {
-                        console.error('Error deleting image file:', err);
-                    }
-                }
+            if (recipe.image && recipe.image.filename) {
+                await deleteImage(recipe.image.filename);
             }
 
             await Recipe.findByIdAndDelete(req.params.id);
@@ -421,34 +401,21 @@ const recipeController = {
     // Upload recipe image
     uploadRecipeImage: async (req, res) => {
         try {
-            if (!req.file) {
+            if (!req.file || !req.file.galleryData) {
                 return res.status(400).json({ message: 'No file uploaded' });
             }
 
-            let imageData = {};
-            if (useCloudinary) {
-                imageData = {
-                    url: req.file.path,
-                    publicId: req.file.filename
-                };
-            } else {
-                const relativePath = `/uploads/${path.basename(req.file.path)}`;
-                imageData = {
-                    url: relativePath,
-                    localPath: req.file.path
-                };
-            }
+            // Return complete gallery image info
+            const imageData = {
+                id: req.file.galleryData.id,
+                filename: req.file.galleryData.filename,
+                url: req.file.galleryData.url,
+                mimetype: req.file.galleryData.mimetype,
+                size: req.file.galleryData.size
+            };
 
             res.status(200).json(imageData);
         } catch (error) {
-            // Clean up the uploaded file if there's an error
-            if (req.file && !useCloudinary) {
-                try {
-                    await fs.unlink(req.file.path);
-                } catch (unlinkErr) {
-                    console.error('Error deleting file:', unlinkErr);
-                }
-            }
             res.status(500).json({ message: 'Server Error', error: error.message });
         }
     }

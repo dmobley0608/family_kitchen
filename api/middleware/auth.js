@@ -50,15 +50,11 @@ exports.checkRecipeAccess = async (req, res, next) => {
 
     if(!req.user) {
         return res.status(401).json({ message: 'Not authorized to access this recipe' });
-    }   
+    }
     // Check if user is in the recipe's household
     const isInHousehold = req.user.household &&
         recipe.household &&
-        req.user.household.toString() === recipe.household.toString();
-
-    // Log for debugging
-    console.log('User household:', req.user.household);
-    console.log('Recipe household:', recipe.household);
+        req.user.household._id.toString() === recipe.household._id.toString();
 
     if (!isInHousehold) {
         return res.status(403).json({ message: 'Not authorized to access this recipe' });

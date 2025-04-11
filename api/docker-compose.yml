@@ -13,7 +13,7 @@ services:
       - NODE_ENV=development
       - PORT=5004
       - MONGO_URI=mongodb://admin:password@mongodb:27017/family_kitchen?authSource=admin
-      - JWT_SECRET=family_kitchen_jwt_secret_dev_only
+      - JWT_SECRET=e77ae4c6c1c64969819ea23a5858e5a9
       - JWT_EXPIRE=30d
     networks:
       - mongo_mongo-network
