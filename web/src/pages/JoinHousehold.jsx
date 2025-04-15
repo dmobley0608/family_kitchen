@@ -6,16 +6,28 @@ import {
     Divider, Grid
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
-import * as invitationService from '../services/invitationService';
-import * as authService from '../services/authService';
+import {
+    useVerifyInvitationQuery,
+    useAcceptInvitationMutation
+} from '../services/api/invitationsApiSlice';
+import { useRegisterMutation } from '../services/api/authApiSlice';
 
 const JoinHousehold = () => {
     const { token } = useParams();
     const navigate = useNavigate();
     const { isAuthenticated, login, user } = useAuth();
 
+    // Use RTK Query hooks
+    const {
+        data: invitationData,
+        isLoading,
+        error: invitationError
+    } = useVerifyInvitationQuery(token);
+
+    const [acceptInvitation, { isLoading: isAccepting }] = useAcceptInvitationMutation();
+    const [registerUser, { isLoading: isRegistering }] = useRegisterMutation();
+
     const [invitation, setInvitation] = useState(null);
-    const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
@@ -24,22 +36,20 @@ const JoinHousehold = () => {
     const [submitting, setSubmitting] = useState(false);
     const [joinSuccess, setJoinSuccess] = useState(false);
 
+    // Set invitation data when query completes
     useEffect(() => {
-        const verifyInvitation = async () => {
-            try {
-                setLoading(true);
-                const result = await invitationService.verifyInvitation(token);
-                setInvitation(result.invitation);
-                setEmail(result.invitation.email); // Pre-fill email from invitation
-            } catch (error) {
-                setError(error.response?.data?.message || 'Invalid or expired invitation');
-            } finally {
-                setLoading(false);
-            }
-        };
+        if (invitationData) {
+            setInvitation(invitationData.invitation);
+            setEmail(invitationData.invitation.email);
+        }
+    }, [invitationData]);
 
-        verifyInvitation();
-    }, [token]);
+    // Show error from query
+    useEffect(() => {
+        if (invitationError) {
+            setError(invitationError.data?.message || 'Invalid or expired invitation');
+        }
+    }, [invitationError]);
 
     // Fix the auto-accept logic for logged-in users
     useEffect(() => {
@@ -47,8 +57,8 @@ const JoinHousehold = () => {
             if (invitation && isAuthenticated && user && user.email === invitation.email) {
                 try {
                     setSubmitting(true);
-                    // Send a proper JSON object with no additional text
-                    const response = await invitationService.acceptInvitation(token);
+                    // Use RTK Query mutation
+                    await acceptInvitation(token).unwrap();
                     setJoinSuccess(true);
 
                     // Navigate to household page after successful join
@@ -57,16 +67,16 @@ const JoinHousehold = () => {
                     }, 2000);
                 } catch (err) {
                     console.error('Join error:', err);
-                    setError(err.response?.data?.message || 'Failed to join household');
+                    setError(err.data?.message || 'Failed to join household');
                     setSubmitting(false);
                 }
             }
         };
 
         tryAutoAccept();
-    }, [invitation, isAuthenticated, user, token, navigate]);
+    }, [invitation, isAuthenticated, user, token, navigate, acceptInvitation]);
 
-    // Fix the manual join function too
+    // Join as new user
     const handleJoinAsNewUser = async (e) => {
         e.preventDefault();
 
@@ -85,14 +95,10 @@ const JoinHousehold = () => {
             setSubmitting(true);
             setError('');
 
-            // Register new user - make sure this sends valid JSON
-            await authService.register({ name, email, password });
-            console.log(email, password);
-            // Login with new credentials
-            await login(email, password);
-            console.log('Logged in successfully:', email);
-            // Accept invitation with proper JSON
-            await invitationService.acceptInvitation(token);
+            // Use RTK Query mutations
+            await registerUser({ name, email, password }).unwrap();
+            await login({ email, password }).unwrap();
+            await acceptInvitation(token).unwrap();
 
             setJoinSuccess(true);
 
@@ -102,7 +108,7 @@ const JoinHousehold = () => {
             }, 2000);
         } catch (err) {
             console.error('Registration/join error:', err);
-            setError(err.response?.data?.message || 'Failed to create account and join household');
+            setError(err.data?.message || 'Failed to create account and join household');
             setSubmitting(false);
         }
     };
@@ -113,7 +119,7 @@ const JoinHousehold = () => {
         navigate(`/login?redirect=/join-household/${token}`);
     };
 
-    if (loading) {
+    if (isLoading) {
         return (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '70vh' }}>
                 <CircularProgress />
@@ -188,11 +194,11 @@ const JoinHousehold = () => {
                             onClick={async () => {
                                 try {
                                     setSubmitting(true);
-                                    await invitationService.acceptInvitation(token);
+                                    await acceptInvitation(token).unwrap();
                                     setJoinSuccess(true);
                                     setTimeout(() => navigate('/household'), 2000);
                                 } catch (err) {
-                                    setError(err.response?.data?.message || 'Failed to join household');
+                                    setError(err.data?.message || 'Failed to join household');
                                     setSubmitting(false);
                                 }
                             }}

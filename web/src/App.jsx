@@ -1,5 +1,6 @@
+import React from 'react';
 import { Routes, Route } from 'react-router-dom';
-import { Box } from '@mui/material';
+import { Box, ThemeProvider } from '@mui/material';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 // Layouts
@@ -28,6 +29,10 @@ import Footer from './components/Footer';
 import TermsAndConditions from './pages/TermsAndConditions';
 import CookiePolicy from './pages/CookiePolicy';
 import CookieConsent from './components/CookieConsent';
+import MealPlanner from './pages/MealPlanner';
+import ShoppingLists from './pages/ShoppingLists';
+import ShoppingList from './pages/ShoppingList';
+import theme from './theme';
 
 function AppContent() {
   const { isLoading } = useAuth();
@@ -66,6 +71,9 @@ function AppContent() {
           <Route path="/recipes/edit/:id" element={<EditRecipe />} />
           <Route path="/household" element={<Household />} />
           <Route path="/profile" element={<ProfileSettings />} />
+          <Route path="/meal-planner" element={<MealPlanner />} />
+          <Route path="/shopping-lists" element={<ShoppingLists />} />
+          <Route path="/shopping-lists/:id" element={<ShoppingList />} />
         </Route>
       </Route>
 
@@ -75,12 +83,17 @@ function AppContent() {
   );
 }
 
+// IMPORTANT: Make sure there's no additional ThemeProvider here
+// that might be overriding your theme
+
 function App() {
   return (
     <AuthProvider>
-      <AppContent />
-      <CookieConsent />
-      <Footer/>
+      <ThemeProvider theme={theme}>
+        <AppContent />
+        <CookieConsent />
+        <Footer />
+      </ThemeProvider>
     </AuthProvider>
   );
 }

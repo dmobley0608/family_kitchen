@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link as RouterLink, useNavigate, useLocation } from 'react-router-dom';
 import { Formik, Form, Field } from 'formik';
 import * as Yup from 'yup';
 import {
@@ -7,6 +7,7 @@ import {
     Link, Alert, CircularProgress
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
+import { useLoginMutation } from '../services/api/authApiSlice';
 
 const validationSchema = Yup.object({
     email: Yup.string()
@@ -18,19 +19,69 @@ const validationSchema = Yup.object({
 });
 
 const Login = () => {
-    const { login } = useAuth();
+    const auth = useAuth();
+    const { updateUser } = auth;
     const [error, setError] = useState('');
+    const navigate = useNavigate();
+    const location = useLocation();
+
+    const [login, { isLoading }] = useLoginMutation();
+    const [loginSuccess, setLoginSuccess] = useState(false);
 
     const handleSubmit = async (values, { setSubmitting }) => {
         try {
             setError('');
-            console.log(values)
-            await login(values.email, values.password);
+            const result = await login({
+                email: values.email,
+                password: values.password
+            }).unwrap();
+
+            if (updateUser) {
+                updateUser(result.user);
+            }
+
+            if (typeof auth.setIsAuthenticated === 'function') {
+                auth.setIsAuthenticated(true);
+            } else if (typeof auth.login === 'function') {
+                auth.login(result.user);
+            } else if (typeof auth.authenticate === 'function') {
+                auth.authenticate(true);
+            } else {
+                console.warn('No authentication method found in AuthContext');
+                localStorage.setItem('isAuthenticated', 'true');
+                localStorage.setItem('user', JSON.stringify(result.user));
+            }
+
+            // Store the redirect URL in sessionStorage before reload
+            const redirectTo = new URLSearchParams(location.search).get('redirect') || '/';
+            sessionStorage.setItem('authRedirect', redirectTo);
+
+            setLoginSuccess(true);
+
+            // Don't navigate here, we'll handle it after reload
         } catch (err) {
-            setError(err.response?.data?.message || 'Failed to login. Please try again.');
+            console.error('Login error:', err);
+            setError(err.data?.message || 'Failed to login. Please try again.');
             setSubmitting(false);
         }
     };
+
+    // Check for redirect on component mount
+    useEffect(() => {
+        const redirectUrl = sessionStorage.getItem('authRedirect');
+        if (redirectUrl) {
+            sessionStorage.removeItem('authRedirect');
+            navigate(redirectUrl);
+        }
+    }, [navigate]);
+
+    // Force reload after successful login
+    useEffect(() => {
+        if (loginSuccess) {
+            // Immediate reload instead of waiting
+            window.location.reload();
+        }
+    }, [loginSuccess]);
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -87,10 +138,10 @@ const Login = () => {
                             fullWidth
                             variant="contained"
                             color="primary"
-                            disabled={isSubmitting}
+                            disabled={isSubmitting || isLoading}
                             sx={{ mt: 2, mb: 2, py: 1.5 }}
                         >
-                            {isSubmitting ? <CircularProgress size={24} /> : 'Login'}
+                            {isSubmitting || isLoading ? <CircularProgress size={24} /> : 'Login'}
                         </Button>
 
                         <Box sx={{ textAlign: 'center', mt: 2 }}>

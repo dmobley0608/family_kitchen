@@ -38,7 +38,7 @@ const fileFilter = (req, file, cb) => {
         return cb(null, true);
     }
 
-    console.log(`Rejected file: ${file.originalname} (${file.mimetype})`);
+
     cb(new Error('Only image files (JPG, PNG, GIF) are allowed!'), false);
 };
 
@@ -68,7 +68,7 @@ const uploadToGallery = async (filePath, originalName, recipeId) => {
 
         // Clean up temporary file
         fs.unlinkSync(filePath);
-        console.log(response.data);
+    
 
         // Update the recipe's image status to success
         if (recipeId) {

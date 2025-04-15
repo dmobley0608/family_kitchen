@@ -1,5 +1,8 @@
 import { createTheme } from '@mui/material/styles';
 
+// Add a console log to confirm theme initialization
+console.log('Initializing custom theme with green primary color #5D9C59');
+
 const theme = createTheme({
     palette: {
         primary: {
@@ -57,5 +60,10 @@ const theme = createTheme({
         },
     },
 });
+
+// Add this to make debugging easier
+if (theme.palette.primary.main !== '#5D9C59') {
+    console.error('Theme initialization error: Primary color is not set correctly');
+}
 
 export default theme;

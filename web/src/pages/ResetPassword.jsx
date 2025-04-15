@@ -6,7 +6,7 @@ import {
     Box, Button, TextField, Typography,
     Link, Alert, CircularProgress
 } from '@mui/material';
-import { resetPassword } from '../services/userService';
+import { useResetPasswordMutation } from '../services/api/userApiSlice';
 
 const validationSchema = Yup.object({
     password: Yup.string()
@@ -22,25 +22,29 @@ const ResetPassword = () => {
     const navigate = useNavigate();
     const [status, setStatus] = useState({ type: '', message: '' });
 
+    const [resetPassword, { isLoading }] = useResetPasswordMutation();
+
     const handleSubmit = async (values, { setSubmitting }) => {
         try {
             setStatus({ type: '', message: '' });
 
-            await resetPassword(resettoken, values.password);
+            await resetPassword({
+                token: resettoken,
+                password: values.password
+            }).unwrap();
 
             setStatus({
                 type: 'success',
                 message: 'Password has been reset successfully!'
             });
 
-            // Redirect to login page after 3 seconds
             setTimeout(() => {
                 navigate('/login');
             }, 3000);
         } catch (err) {
             setStatus({
                 type: 'error',
-                message: err.response?.data?.message || 'Failed to reset password. Please try again.'
+                message: err.data?.message || 'Failed to reset password. Please try again.'
             });
             setSubmitting(false);
         }
@@ -98,10 +102,10 @@ const ResetPassword = () => {
                             fullWidth
                             variant="contained"
                             color="primary"
-                            disabled={isSubmitting}
+                            disabled={isSubmitting || isLoading}
                             sx={{ mt: 3, mb: 2, py: 1.5 }}
                         >
-                            {isSubmitting ? <CircularProgress size={24} /> : 'Reset Password'}
+                            {isSubmitting || isLoading ? <CircularProgress size={24} /> : 'Reset Password'}
                         </Button>
 
                         <Box sx={{ textAlign: 'center', mt: 2 }}>

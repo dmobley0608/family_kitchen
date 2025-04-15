@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
     Box, Typography, Paper, Button, TextField,
     List, ListItem, ListItemAvatar, ListItemText,
-    Avatar, IconButton, Divider, CircularProgress,
+    Avatar, IconButton, CircularProgress,
     Dialog, DialogTitle, DialogContent, DialogActions,
     Alert, Snackbar, Card, CardContent, Grid, Tooltip,
     Chip
@@ -15,14 +15,20 @@ import {
     Email as EmailIcon
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
-import * as householdService from '../services/householdService';
-import * as invitationService from '../services/invitationService';
 import InviteForm from '../components/InviteForm';
+import {
+    useGetHouseholdDetailsQuery,
+    useUpdateHouseholdNameMutation,
+    useGenerateInviteCodeMutation,
+    useRemoveMemberMutation
+} from '../services/api/householdApiSlice';
+import {
+    useGetUserInvitationsQuery,
+    useResendInvitationMutation
+} from '../services/api/invitationsApiSlice';
 
 const Household = () => {
     const { user } = useAuth();
-    const [household, setHousehold] = useState(null);
-    const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [openNameDialog, setOpenNameDialog] = useState(false);
@@ -30,87 +36,58 @@ const Household = () => {
     const [newHouseholdName, setNewHouseholdName] = useState('');
     const [inviteCode, setInviteCode] = useState('');
     const [copied, setCopied] = useState(false);
-    const [invitations, setInvitations] = useState([]);
-    const [invitationsLoading, setInvitationsLoading] = useState(false);
     const [confirmRemoveDialogOpen, setConfirmRemoveDialogOpen] = useState(false);
     const [memberToRemove, setMemberToRemove] = useState(null);
 
-    // Fetch household data
-    const fetchHouseholdData = async () => {
-        try {
-            setLoading(true);
-            const data = await householdService.getHouseholdDetails();
-            setHousehold(data);
-        } catch (error) {
-            console.error('Error fetching household:', error);
-            setError(error.response?.data?.message || 'Failed to load household data');
-        } finally {
-            setLoading(false);
-        }
-    };
+    // Use RTK Query hooks
+    const {
+        data: household,
+        isLoading,
+        error: householdError
+    } = useGetHouseholdDetailsQuery();
 
-    // Fetch pending invitations
-    const fetchInvitations = async () => {
-        try {
-            setInvitationsLoading(true);
-            const data = await invitationService.getUserInvitations();
-            setInvitations(data);
-        } catch (error) {
-            console.error('Error fetching invitations:', error);
-        } finally {
-            setInvitationsLoading(false);
-        }
-    };
+    const {
+        data: invitations = [],
+        isLoading: invitationsLoading
+    } = useGetUserInvitationsQuery();
 
-    useEffect(() => {
-        fetchHouseholdData();
-    }, []);
-
-    useEffect(() => {
-        // Only fetch invitations if user is part of a household
-        if (household && user) {
-            fetchInvitations();
-        }
-    }, [household, user]);
+    const [updateHouseholdName] = useUpdateHouseholdNameMutation();
+    const [generateInviteCode] = useGenerateInviteCodeMutation();
+    const [removeMember] = useRemoveMemberMutation();
+    const [resendInvitation] = useResendInvitationMutation();
 
     // Handle household name change
     const handleUpdateName = async () => {
         try {
-            await householdService.updateHouseholdName(newHouseholdName);
+            await updateHouseholdName(newHouseholdName);
             setOpenNameDialog(false);
             setSuccess('Household name updated successfully');
-            fetchHouseholdData(); // Refresh data
         } catch (error) {
             console.error('Error updating household name:', error);
-            setError(error.response?.data?.message || 'Failed to update household name');
+            setError(error.data?.message || 'Failed to update household name');
         }
     };
 
     // Handle generate invite code
     const handleGenerateInviteCode = async () => {
         try {
-            const result = await householdService.generateInviteCode();
-            setHousehold(prev => ({
-                ...prev,
-                inviteCode: result.inviteCode
-            }));
+            const result = await generateInviteCode().unwrap();
             setSuccess('New invite code generated');
         } catch (error) {
             console.error('Error generating invite code:', error);
-            setError(error.response?.data?.message || 'Failed to generate invite code');
+            setError(error.data?.message || 'Failed to generate invite code');
         }
     };
 
     // Handle joining household
     const handleJoinHousehold = async () => {
         try {
-            await householdService.joinHousehold(inviteCode);
+            await joinHousehold(inviteCode).unwrap();
             setOpenJoinDialog(false);
             setSuccess('Successfully joined household');
-            fetchHouseholdData(); // Refresh data
         } catch (error) {
             console.error('Error joining household:', error);
-            setError(error.response?.data?.message || 'Invalid invite code');
+            setError(error.data?.message || 'Invalid invite code');
         }
     };
 
@@ -123,20 +100,13 @@ const Household = () => {
     // Handle remove member
     const handleRemoveMember = async () => {
         try {
-            await householdService.removeMember(memberToRemove._id);
+            await removeMember(memberToRemove._id).unwrap();
             setSuccess('Member removed successfully');
-            fetchHouseholdData(); // Refresh data
             setConfirmRemoveDialogOpen(false);
         } catch (error) {
             console.error('Error removing member:', error);
-            setError(error.response?.data?.message || 'Failed to remove member');
+            setError(error.data?.message || 'Failed to remove member');
         }
-    };
-
-    // Handle successful invitation
-    const handleInviteSuccess = (newInvitation) => {
-        setSuccess('Invitation sent successfully!');
-        setInvitations(prev => [newInvitation, ...prev]);
     };
 
     // Copy invite code to clipboard
@@ -147,12 +117,16 @@ const Household = () => {
         });
     };
 
-    if (loading) {
+    if (isLoading) {
         return (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
                 <CircularProgress />
             </Box>
         );
+    }
+
+    if (householdError) {
+        setError(householdError.data?.message || 'Failed to load household data');
     }
 
     const isOwner = household && user && household.owner === user._id;
@@ -303,7 +277,7 @@ const Household = () => {
                                     </Typography>
 
                                     <Box sx={{ mt: 2 }}>
-                                        <InviteForm onInviteSuccess={handleInviteSuccess} />
+                                        <InviteForm onInviteSuccess={(newInvitation) => setSuccess('Invitation sent successfully!')} />
                                     </Box>
                                 </CardContent>
                             </Card>
@@ -331,11 +305,10 @@ const Household = () => {
                                                                 size="small"
                                                                 onClick={async () => {
                                                                     try {
-                                                                        await invitationService.resendInvitation(invitation._id);
+                                                                        await resendInvitation(invitation._id).unwrap();
                                                                         setSuccess('Invitation resent successfully');
-                                                                        fetchInvitations(); // Refresh the invitations list
                                                                     } catch (error) {
-                                                                        setError(error.response?.data?.message || 'Failed to resend invitation');
+                                                                        setError(error.data?.message || 'Failed to resend invitation');
                                                                     }
                                                                 }}
                                                                 title="Resend Invitation"

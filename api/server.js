@@ -39,6 +39,8 @@ app.use('/api/recipes', require('./routes/recipeRoutes'));
 app.use('/api/ingredients', require('./routes/ingredientRoutes'));
 app.use('/api/categories', require('./routes/categoryRoutes'));
 app.use('/api/invitations', require('./routes/invitationRoutes'));
+app.use('/api/shopping-lists', require('./routes/shoppingListRoutes'));
+app.use('/api/meal-plans', require('./routes/mealPlanRoutes')); 
 
 // Serve static files from the public directory
 app.use(express.static(path.join(__dirname, 'public')));

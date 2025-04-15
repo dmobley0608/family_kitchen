@@ -1,46 +1,52 @@
-import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Typography, Box, Grid, Card, CardContent,
-  CardActions, Button, CircularProgress, Divider
+  CardActions, Button, CircularProgress, Divider,
+  CardMedia
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
-import * as recipeService from '../services/recipeService';
-import * as householdService from '../services/householdService';
+import { useGetRecipesQuery } from '../services/api/recipesApiSlice';
+import { useGetHouseholdDetailsQuery } from '../services/api/householdApiSlice';
+import { useEffect, useState } from 'react';
+import { getImageUrl } from '../utils/tools';
 
 const Dashboard = () => {
-  const [loading, setLoading] = useState(true);
-  const [householdRecipes, setHouseholdRecipes] = useState([]);
-  const [household, setHousehold] = useState(null);
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [householdRecipes, setHouseholdRecipes] = useState([]);
+  // Use RTK Query hooks for data fetching
+  const { data: recipes = [], isLoading: recipesLoading } = useGetRecipesQuery();
+  const { data: household, isLoading: householdLoading } = useGetHouseholdDetailsQuery();
 
   useEffect(() => {
+    // Debug data
+    console.log('All recipes:', recipes);
+    console.log('Household data:', household);
 
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const [recipesData, householdData] = await Promise.all([
-          recipeService.getAllRecipes(),
-          householdService.getHouseholdDetails()
-        ]);
-      
+    if (recipes && household) {
+      // More flexible comparison to handle different object structures
+      const filteredRecipes = recipes.filter(recipe => {
+        // Debug each recipe's household data
+        console.log('Recipe household:', recipe.household);
 
-        // Filter recipes by household
-        const filteredRecipes = recipesData.filter(
-          recipe => recipe.household?._id === user?.household?._id
-        );
-        setHouseholdRecipes(filteredRecipes);
-        setHousehold(householdData);
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+        // Handle different possible structures
+        const recipeHouseholdId = recipe.household?._id || recipe.household?.id || recipe.householdId;
+        const currentHouseholdId = household._id || household.id;
 
-    fetchData();
-  }, [user]);
+        console.log(`Comparing: recipe household ${recipeHouseholdId} vs current ${currentHouseholdId}`);
+
+        return recipeHouseholdId === currentHouseholdId;
+      });
+
+      console.log('Filtered recipes:', filteredRecipes);
+      setHouseholdRecipes(filteredRecipes);
+    }
+  }, [recipes, household]);
+
+  console.log(householdRecipes);
+
+  // Determine overall loading state
+  const loading = recipesLoading || householdLoading;
 
   if (loading) {
     return (
@@ -90,8 +96,29 @@ const Dashboard = () => {
           {householdRecipes.length > 0 ? (
             householdRecipes.slice(0, 6).map((recipe) => (
               <Grid item xs={12} sm={6} md={4} key={recipe._id}>
-                <Card>
-                  <CardContent>
+                <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                  {recipe.image?.url ? (
+                    <CardMedia
+                      component="img"
+                      height="160"
+                      image={getImageUrl(recipe.image.url)}
+                      alt={recipe.title}
+                      sx={{ objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <Box sx={{
+                      height: 100,
+                      backgroundColor: 'grey.200',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <Typography variant="body2" color="text.secondary">
+                        No image available
+                      </Typography>
+                    </Box>
+                  )}
+                  <CardContent sx={{ flexGrow: 1 }}>
                     <Typography variant="h6" gutterBottom>
                       {recipe.title}
                     </Typography>
@@ -100,6 +127,9 @@ const Dashboard = () => {
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                       By: {recipe.createdBy?.name}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                      Prep: {recipe.prepTime} min | Cook: {recipe.cookTime} min
                     </Typography>
                   </CardContent>
                   <CardActions>

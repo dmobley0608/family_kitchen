@@ -6,7 +6,7 @@ import {
     Box, Button, TextField, Typography,
     Link, Alert, CircularProgress
 } from '@mui/material';
-import { forgotPassword } from '../services/userService';
+import { useForgotPasswordMutation } from '../services/api/userApiSlice';
 
 const validationSchema = Yup.object({
     email: Yup.string()
@@ -16,12 +16,13 @@ const validationSchema = Yup.object({
 
 const ForgotPassword = () => {
     const [status, setStatus] = useState({ type: '', message: '' });
+    const [forgotPassword, { isLoading }] = useForgotPasswordMutation();
 
     const handleSubmit = async (values, { setSubmitting, resetForm }) => {
         try {
             setStatus({ type: '', message: '' });
 
-            await forgotPassword(values.email);
+            await forgotPassword(values.email).unwrap();
 
             setStatus({
                 type: 'success',
@@ -31,7 +32,7 @@ const ForgotPassword = () => {
         } catch (err) {
             setStatus({
                 type: 'error',
-                message: err.response?.data?.message || 'Failed to send reset email. Please try again.'
+                message: err.data?.message || 'Failed to send reset email. Please try again.'
             });
         } finally {
             setSubmitting(false);
@@ -78,10 +79,10 @@ const ForgotPassword = () => {
                             fullWidth
                             variant="contained"
                             color="primary"
-                            disabled={isSubmitting}
+                            disabled={isSubmitting || isLoading}
                             sx={{ mt: 3, mb: 2, py: 1.5 }}
                         >
-                            {isSubmitting ? <CircularProgress size={24} /> : 'Send Reset Link'}
+                            {isSubmitting || isLoading ? <CircularProgress size={24} /> : 'Send Reset Link'}
                         </Button>
 
                         <Box sx={{ textAlign: 'center', mt: 2 }}>

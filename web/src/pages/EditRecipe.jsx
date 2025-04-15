@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Formik, Form, Field, FieldArray } from 'formik';
 import * as Yup from 'yup';
@@ -10,9 +10,13 @@ import {
     Alert
 } from '@mui/material';
 import { Delete as DeleteIcon, Add as AddIcon } from '@mui/icons-material';
-import * as recipeService from '../services/recipeService';
-import * as categoryService from '../services/categoryService';
 import ImageUploader from '../components/ImageUploader';
+import { getImageUrl } from '../utils/tools';
+import {
+    useGetRecipeByIdQuery,
+    useUpdateRecipeMutation
+} from '../services/api/recipesApiSlice';
+import { useGetCategoriesQuery } from '../services/api/categoriesApiSlice';
 
 const validationSchema = Yup.object({
     title: Yup.string()
@@ -40,53 +44,32 @@ const unitOptions = [
 
 const EditRecipe = () => {
     const { id } = useParams();
-    const [recipe, setRecipe] = useState(null);
-    const [categories, setCategories] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
     const navigate = useNavigate();
+    const [error, setError] = useState('');
 
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const [recipeData, categoriesData] = await Promise.all([
-                    recipeService.getRecipeById(id),
-                    categoryService.getAllCategories()
-                ]);
+    // Use RTK Query hooks
+    const {
+        data: recipe,
+        isLoading: recipeLoading,
+        error: recipeError
+    } = useGetRecipeByIdQuery(id);
 
-                setRecipe(recipeData);
-                setCategories(categoriesData);
-            } catch (error) {
-                console.error('Error fetching data:', error);
-                setError(error.response?.data?.message || 'Failed to load recipe data');
-            } finally {
-                setLoading(false);
-            }
-        };
+    const { data: categories = [], isLoading: categoriesLoading } = useGetCategoriesQuery();
+    const [updateRecipe, { isLoading: isUpdating }] = useUpdateRecipeMutation();
 
-        fetchData();
-    }, [id]);
+    // Determine overall loading state
+    const loading = recipeLoading || categoriesLoading;
 
     const handleSubmit = async (values, { setSubmitting }) => {
         try {
             setError('');
-            await recipeService.updateRecipe(id, values);
+            await updateRecipe({ id, ...values }).unwrap();
             navigate(`/recipes/${id}`);
-        } catch (error) {
-            console.error('Error updating recipe:', error);
-            setError(error.response?.data?.message || 'Failed to update recipe');
+        } catch (err) {
+            console.error('Error updating recipe:', err);
+            setError(err.data?.message || 'Failed to update recipe');
             setSubmitting(false);
         }
-    };
-
-    const getImageUrl = (recipe) => {
-        if (recipe?.image?.url) {
-            if (recipe.image.url.startsWith('/uploads/')) {
-                return `${import.meta.env.VITE_API_URL.split('/api')[0]}${recipe.image.url}`;
-            }
-            return recipe.image.url;
-        }
-        return null;
     };
 
     if (loading) {
@@ -97,7 +80,7 @@ const EditRecipe = () => {
         );
     }
 
-    if (!recipe) {
+    if (recipeError || !recipe) {
         return (
             <Box sx={{ p: 4 }}>
                 <Alert severity="error">Recipe not found</Alert>
@@ -122,7 +105,7 @@ const EditRecipe = () => {
         })),
         instructions: recipe.instructions,
         isPrivate: recipe.isPrivate,
-        image: recipe.image ? getImageUrl(recipe) : null,
+        image: getImageUrl(recipe?.image?.url) ?? null,
         prepTime: recipe.prepTime || 0,
         cookTime: recipe.cookTime || 0
     };
@@ -335,9 +318,9 @@ const EditRecipe = () => {
                                         type="submit"
                                         variant="contained"
                                         color="primary"
-                                        disabled={isSubmitting}
+                                        disabled={isSubmitting || isUpdating}
                                     >
-                                        {isSubmitting ? <CircularProgress size={24} /> : 'Update Recipe'}
+                                        {isSubmitting || isUpdating ? <CircularProgress size={24} /> : 'Update Recipe'}
                                     </Button>
                                 </Grid>
                             </Grid>

@@ -45,7 +45,7 @@ InvitationSchema.pre('save', function (next) {
     // Only generate token if it's not set yet (for new documents)
     if (!this.token) {
         this.token = require('crypto').randomBytes(32).toString('hex');
-        console.log('Generated new token:', this.token);
+       
     }
     next();
 });

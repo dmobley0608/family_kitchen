@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Formik, Form, Field, FieldArray } from 'formik';
 import * as Yup from 'yup';
@@ -11,8 +11,14 @@ import {
     Card, CardContent, InputAdornment
 } from '@mui/material';
 import { Delete as DeleteIcon, Add as AddIcon, ArrowBack, ArrowForward } from '@mui/icons-material';
-import * as recipeService from '../services/recipeService';
-import * as categoryService from '../services/categoryService';
+import {
+    useCreateRecipeMutation,
+    useUploadRecipeImageMutation
+} from '../services/api/recipesApiSlice';
+import {
+    useGetCategoriesQuery,
+    useCreateCategoryMutation
+} from '../services/api/categoriesApiSlice';
 
 const basicInfoSchema = Yup.object().shape({
     title: Yup.string()
@@ -104,26 +110,14 @@ const steps = [
 
 const CreateRecipe = () => {
     const [activeStep, setActiveStep] = useState(0);
-    const [categories, setCategories] = useState([]);
-    const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const navigate = useNavigate();
 
-    useEffect(() => {
-        const fetchCategories = async () => {
-            try {
-                const data = await categoryService.getAllCategories();
-                setCategories(data);
-            } catch (error) {
-                console.error('Error fetching categories:', error);
-                setError('Failed to load categories');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchCategories();
-    }, []);
+    // RTK Query hooks
+    const { data: categories = [], isLoading } = useGetCategoriesQuery();
+    const [createRecipe, { isLoading: isCreating }] = useCreateRecipeMutation();
+    const [createCategory, { isLoading: isCreatingCategory }] = useCreateCategoryMutation();
+    const [uploadImage] = useUploadRecipeImageMutation();
 
     const initialValues = {
         title: '',
@@ -200,13 +194,13 @@ const CreateRecipe = () => {
 
             if (values.useCustomCategory && values.customCategory) {
                 try {
-                    const newCategory = await categoryService.createCategory({
+                    const newCategory = await createCategory({
                         name: values.customCategory
-                    });
+                    }).unwrap();
                     categoryId = newCategory._id;
                 } catch (categoryError) {
-                    if (categoryError.response?.data?.category?._id) {
-                        categoryId = categoryError.response.data.category._id;
+                    if (categoryError.data?.category?._id) {
+                        categoryId = categoryError.data.category._id;
                     } else {
                         throw categoryError;
                     }
@@ -223,11 +217,11 @@ const CreateRecipe = () => {
                 cookTime: values.cookTime
             };
 
-            const newRecipe = await recipeService.createRecipe(recipeData);
+            const newRecipe = await createRecipe(recipeData).unwrap();
             navigate(`/recipes/${newRecipe._id}`);
-        } catch (error) {
-            console.error('Error creating recipe:', error);
-            setError(error.response?.data?.message || 'Failed to create recipe');
+        } catch (err) {
+            console.error('Error creating recipe:', err);
+            setError(err.data?.message || 'Failed to create recipe');
             setSubmitting(false);
         }
     };
@@ -693,7 +687,7 @@ const CreateRecipe = () => {
         }
     };
 
-    if (loading) {
+    if (isLoading) {
         return (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
                 <CircularProgress />

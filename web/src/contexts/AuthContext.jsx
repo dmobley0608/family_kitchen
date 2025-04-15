@@ -1,125 +1,98 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import * as authService from '../services/authService';
-import * as invitationService from '../services/invitationService';
-import api from '../services/api';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import {
+    useLoginMutation,
+    useRegisterMutation,
+    useGetCurrentUserQuery,
+    useUpdateProfileMutation,
+    logout as logoutAction
+} from '../services/api/authApiSlice';
 
 const AuthContext = createContext();
 
-export const useAuth = () => useContext(AuthContext);
+export function useAuth() {
+    return useContext(AuthContext);
+}
 
-export const AuthProvider = ({ children }) => {
+export function AuthProvider({ children }) {
     const [user, setUser] = useState(null);
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
-    const [token, setToken] = useState(localStorage.getItem('token') || null);
-    const navigate = useNavigate();
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-    // Set authorization header on token change
+    // Use the RTK Query hooks
+    const [loginMutation] = useLoginMutation();
+    const [registerMutation] = useRegisterMutation();
+    const [updateProfileMutation] = useUpdateProfileMutation();
+
+    // For getting user data, we'll use the query with skipToken to control when it runs
+    const { data: userData, error, refetch } = useGetCurrentUserQuery(undefined, {
+        skip: !localStorage.getItem('token'),
+    });
+
+    // Update auth state when user data changes
     useEffect(() => {
-        if (token) {
-            api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-        } else {
-            delete api.defaults.headers.common['Authorization'];
+        if (userData) {
+            setUser(userData);
+            setIsAuthenticated(true);
         }
-    }, [token]);
+        setIsLoading(false);
+    }, [userData]);
 
+    // Check token and load user data on app start
     useEffect(() => {
-        const initAuth = async () => {
-            if (token) {
-                try {
-                    const userData = await authService.getCurrentUser();
-                    setUser(userData.user);
-                    setIsAuthenticated(true);
-                } catch (error) {
-                    console.error('Auth initialization failed:', error);
-                    localStorage.removeItem('token');
-                    setToken(null);
-                    setIsAuthenticated(false);
-                }
-            }
+        const token = localStorage.getItem('token');
+        if (!token) {
             setIsLoading(false);
-        };
+            return;
+        }
 
-        initAuth();
-    }, [token]);
-
-    const login = async (email, password) => {
-        try {
-            setIsLoading(true);
-
-            // Ensure we're sending proper credentials
-            const response = await authService.login({
-                email,
-                password
+        // Token exists, refetch user data
+        refetch()
+            .catch(err => {
+                console.error('Error loading user data:', err);
+                setIsLoading(false);
             });
+    }, [refetch]);
 
-            if (response && response.token) {
-                localStorage.setItem('token', response.token);
-                setToken(response.token);
-                setUser(response.user);
-                setIsAuthenticated(true);
-
-                // Process pending invitation if exists
-                const pendingInvitation = sessionStorage.getItem('pendingInvitation');
-                if (pendingInvitation) {
-                    try {
-                        sessionStorage.removeItem('pendingInvitation');
-                        await invitationService.acceptInvitation(pendingInvitation);
-                    } catch (inviteError) {
-                        console.error('Failed to accept pending invitation:', inviteError);
-                    }
-                }
-
-                return response;
-            } else {
-                throw new Error('Invalid response from server - no token received');
-            }
+    // Auth methods
+    const login = async (credentials) => {
+        try {
+            const data = await loginMutation(credentials).unwrap();
+            setUser(data.user);
+            setIsAuthenticated(true);
+            return data;
         } catch (error) {
             console.error('Login error:', error);
             throw error;
-        } finally {
-            setIsLoading(false);
         }
     };
 
     const register = async (userData) => {
         try {
-            setIsLoading(true);
-            const response = await authService.register(userData);
-
-            if (response && response.token) {
-                localStorage.setItem('token', response.token);
-                setToken(response.token);
-                setUser(response.user);
-                setIsAuthenticated(true);
-                return response.user;
-            } else {
-                throw new Error('Invalid response from server');
-            }
+            const data = await registerMutation(userData).unwrap();
+            setUser(data.user);
+            setIsAuthenticated(true);
+            return data;
         } catch (error) {
             console.error('Registration error:', error);
             throw error;
-        } finally {
-            setIsLoading(false);
         }
     };
 
     const logout = () => {
-        localStorage.removeItem('token');
-        setToken(null);
+        logoutAction();
         setUser(null);
         setIsAuthenticated(false);
-        delete api.defaults.headers.common['Authorization'];
-        navigate('/login');
     };
 
-    const updateUser = (userData) => {
-        setUser(prevUser => {
-            if (!prevUser) return userData;
-            return { ...prevUser, ...userData };
-        });
-        setIsAuthenticated(true);
+    const updateProfile = async (userData) => {
+        try {
+            const data = await updateProfileMutation(userData).unwrap();
+            setUser(data);
+            return data;
+        } catch (error) {
+            console.error('Update profile error:', error);
+            throw error;
+        }
     };
 
     const value = {
@@ -129,7 +102,7 @@ export const AuthProvider = ({ children }) => {
         login,
         register,
         logout,
-        updateUser
+        updateProfile
     };
 
     return (
@@ -137,4 +110,4 @@ export const AuthProvider = ({ children }) => {
             {children}
         </AuthContext.Provider>
     );
-};
+}

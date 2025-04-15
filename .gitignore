@@ -58,3 +58,6 @@ yarn-error.*
 *.seed
 *.pid.lock
 .eslintcache
+temp-uploads/
+public/
+

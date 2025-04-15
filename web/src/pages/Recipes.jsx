@@ -9,57 +9,48 @@ import {
 import {
   Search as SearchIcon,
   Add as AddIcon,
-  Restaurant as RestaurantIcon
+  Restaurant as RestaurantIcon,
+  Sync as SyncIcon
 } from '@mui/icons-material';
-import * as recipeService from '../services/recipeService';
-import * as categoryService from '../services/categoryService';
+import { useGetRecipesQuery } from '../services/api/recipesApiSlice';
+import { useGetCategoriesQuery } from '../services/api/categoriesApiSlice';
 import { useAuth } from '../contexts/AuthContext';
+import { getImageUrl } from '../utils/tools';
 
 const Recipes = () => {
-  const [recipes, setRecipes] = useState([]);
+  // Use RTK Query hooks to fetch data
+  const { data: recipes = [], isLoading, refetch } = useGetRecipesQuery();
+  const { data: categories = [] } = useGetCategoriesQuery();
+
   const [filteredRecipes, setFilteredRecipes] = useState([]);
-  const [categories, setCategories] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
+  const [hasPendingImages, setHasPendingImages] = useState(false);
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
-  // Helper function to get the proper image URL
-  const getImageUrl = (recipe) => {
-    if (recipe?.image?.url) {
-      if (recipe.image.url.startsWith('/uploads/')) {
-        return `${import.meta.env.VITE_API_URL.split('/api')[0]}${recipe.image.url}`;
-      }
-      return recipe.image.url;
+  // Set up polling for pending images
+  useEffect(() => {
+    const hasPending = recipes.some(recipe =>
+      recipe.image && recipe.image.status === 'pending'
+    );
+
+    setHasPendingImages(hasPending);
+
+    let interval;
+    if (hasPending) {
+      interval = setInterval(() => {
+        refetch();
+      }, 8000);
     }
-    return null;
-  };
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setIsLoading(true);
-        const [recipesData, categoriesData] = await Promise.all([
-          recipeService.getAllRecipes(),
-          categoryService.getAllCategories()
-        ]);
-
-        setRecipes(recipesData);
-        setFilteredRecipes(recipesData);
-        setCategories(categoriesData);
-      } catch (error) {
-        console.error('Error fetching recipes:', error);
-      } finally {
-        setIsLoading(false);
-      }
+    return () => {
+      if (interval) clearInterval(interval);
     };
+  }, [recipes, refetch]);
 
-    fetchData();
-  }, []);
-
+  // Filter recipes based on search term and category
   useEffect(() => {
-    // Filter recipes based on search term and category
     let result = recipes;
 
     if (searchTerm) {
@@ -190,17 +181,50 @@ const Recipes = () => {
                     overflow: 'hidden'
                   }}
                 >
-                  {getImageUrl(recipe) ? (
-                    <img
-                      src={getImageUrl(recipe)}
-                      alt={recipe.title}
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        objectPosition: 'center'
-                      }}
-                    />
+                  {recipe.image ? (
+                    recipe.image.status === 'pending' ? (
+                      <Box
+                        sx={{
+                          height: '100%',
+                          bgcolor: 'grey.200',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <SyncIcon sx={{ fontSize: 40, color: 'primary.main', mb: 1 }} />
+                        <Typography variant="caption" align="center" color="text.secondary">
+                          Processing image...
+                        </Typography>
+                      </Box>
+                    ) : recipe.image.status === 'failed' ? (
+                      <Box
+                        sx={{
+                          height: '100%',
+                          bgcolor: 'grey.200',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <Typography variant="caption" color="error">
+                          Image failed to upload
+                        </Typography>
+                      </Box>
+                    ) : (
+                      <img
+                        src={getImageUrl(recipe.image.url)}
+                        alt={recipe.title}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                          objectPosition: 'center'
+                        }}
+                      />
+                    )
                   ) : (
                     <Box
                       sx={{

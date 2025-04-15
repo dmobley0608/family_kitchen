@@ -11,7 +11,7 @@ import {
     ContentCopy as CopyIcon,
     CheckCircle as CheckCircleIcon
 } from '@mui/icons-material';
-import * as invitationService from '../services/invitationService';
+import { useSendInvitationMutation } from '../services/api/invitationsApiSlice';
 
 const inviteSchema = Yup.object().shape({
     email: Yup.string()
@@ -25,6 +25,9 @@ const InviteForm = ({ onInviteSuccess }) => {
     const [error, setError] = useState('');
     const [inviteLink, setInviteLink] = useState('');
     const [copied, setCopied] = useState(false);
+
+    // Use RTK Query mutation hook
+    const [sendInvitation, { isLoading }] = useSendInvitationMutation();
 
     const handleOpen = () => {
         setOpen(true);
@@ -45,7 +48,10 @@ const InviteForm = ({ onInviteSuccess }) => {
     const handleSubmit = async (values, { setSubmitting, resetForm }) => {
         try {
             setError('');
-            const response = await invitationService.sendInvitation(values.email);
+
+            // Use RTK Query mutation
+            const response = await sendInvitation(values.email).unwrap();
+
             setSuccess(true);
             resetForm();
 
@@ -64,7 +70,7 @@ const InviteForm = ({ onInviteSuccess }) => {
                 }, 1500);
             }
         } catch (err) {
-            setError(err.response?.data?.message || 'Failed to send invitation');
+            setError(err.data?.message || 'Failed to send invitation');
         } finally {
             setSubmitting(false);
         }
@@ -176,7 +182,7 @@ const InviteForm = ({ onInviteSuccess }) => {
                             <DialogActions sx={{ px: 3, pb: 2 }}>
                                 <Button
                                     onClick={handleClose}
-                                    disabled={isSubmitting}
+                                    disabled={isSubmitting || isLoading}
                                 >
                                     {success ? 'Done' : 'Cancel'}
                                 </Button>
@@ -186,10 +192,10 @@ const InviteForm = ({ onInviteSuccess }) => {
                                         type="submit"
                                         variant="contained"
                                         color="primary"
-                                        disabled={isSubmitting}
-                                        startIcon={isSubmitting ? <CircularProgress size={20} /> : <SendIcon />}
+                                        disabled={isSubmitting || isLoading}
+                                        startIcon={isSubmitting || isLoading ? <CircularProgress size={20} /> : <SendIcon />}
                                     >
-                                        {isSubmitting ? 'Sending...' : 'Send Invitation'}
+                                        {isSubmitting || isLoading ? 'Sending...' : 'Send Invitation'}
                                     </Button>
                                 )}
                             </DialogActions>

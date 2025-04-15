@@ -3,7 +3,7 @@ import { Outlet, useNavigate } from 'react-router-dom';
 import {
     AppBar, Box, Toolbar, Typography, Button, IconButton,
     Drawer, List, ListItem, ListItemIcon, ListItemText,
-    Container, Divider, Avatar
+    Container, Divider, Avatar, useTheme
 } from '@mui/material';
 import {
     Menu as MenuIcon,
@@ -12,7 +12,9 @@ import {
     Home as HomeIcon,
     People as HouseholdIcon,
     Add as AddIcon,
-    Logout as LogoutIcon
+    Logout as LogoutIcon,
+    LocalGroceryStoreOutlined,
+    MenuBookOutlined
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import Footer from '../components/Footer';
@@ -22,6 +24,7 @@ const MainLayout = () => {
     const { user, isAuthenticated, logout } = useAuth();
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     const navigate = useNavigate();
+    const theme = useTheme();
 
     const toggleDrawer = () => {
         setDrawerOpen(!drawerOpen);
@@ -46,11 +49,22 @@ const MainLayout = () => {
     const authenticatedMenuItems = [
         { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
         { text: 'Household', icon: <HouseholdIcon />, path: '/household' },
+        { text: 'Meal Plan', icon: <MenuBookOutlined />, path: '/meal-planner' },
+        { text: 'Shopping List', icon: <LocalGroceryStoreOutlined />, path: '/shopping-lists' },
         { text: 'Add Recipe', icon: <AddIcon />, path: '/recipes/create' },
         { text: 'Profile', icon: <Avatar />, path: '/profile' }
     ];
 
 
+    // Handle window resize for responsive design
+    useEffect(() => {
+        const handleResize = () => {
+            setWindowWidth(window.innerWidth);
+        };
+
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     return (
         <Box sx={{ display: 'flex', minHeight: '100vh' }}>
@@ -65,29 +79,29 @@ const MainLayout = () => {
                     >
                         <MenuIcon />
                     </IconButton>
-                    <Typography variant="h6" component="div" sx={{  cursor: 'pointer' }} onClick={() => navigateTo('/')}>
+                    <Typography variant="h6" component="div" sx={{ cursor: 'pointer' }} onClick={() => navigateTo('/')}>
                         Family Kitchen
                     </Typography>
 
                     {windowWidth > 400 && (
                         <>
-                                        {isAuthenticated ? (
-                        <Box sx={{ display: 'flex', marginLeft:'auto', alignItems: 'center' }}>
-                            <Typography variant="body1" sx={{ mr: 2 }}>
-                                {user?.name}
-                            </Typography>
-                            <Button color="inherit" onClick={logout}>
-                                Logout
-                            </Button>
-                        </Box>
-                    ) : (
-                        <Box sx={{marginLeft:'auto'}}>
-                            <Button color="inherit" onClick={() => navigateTo('/login')}>Login</Button>
-                            <Button color="inherit" onClick={() => navigateTo('/register')}>Register</Button>
-                        </Box>
+                            {isAuthenticated ? (
+                                <Box sx={{ display: 'flex', marginLeft: 'auto', alignItems: 'center' }}>
+                                    <Typography variant="body1" sx={{ mr: 2 }}>
+                                        {user?.name}
+                                    </Typography>
+                                    <Button color="inherit" onClick={logout}>
+                                        Logout
+                                    </Button>
+                                </Box>
+                            ) : (
+                                <Box sx={{ marginLeft: 'auto' }}>
+                                    <Button color="inherit" onClick={() => navigateTo('/login')}>Login</Button>
+                                    <Button color="inherit" onClick={() => navigateTo('/register')}>Register</Button>
+                                </Box>
+                            )}
+                        </>
                     )}
-                    </>
-                )}
                 </Toolbar>
             </AppBar>
             <Drawer
@@ -163,7 +177,7 @@ const MainLayout = () => {
                     <Outlet />
                 </Container>
             </Box>
-           
+
         </Box>
     );
 };

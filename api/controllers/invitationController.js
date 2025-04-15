@@ -60,9 +60,7 @@ const invitationController = {
                 // Create invitation link
                 const inviteLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/join-household/${savedInvitation.token}`;
 
-                // Output the link for testing purposes even if email fails
-                console.log(`Invitation link for ${email}: ${inviteLink}`);
-
+               
                 // Send invitation email with enhanced error handling
                 const emailResult = await sendHouseholdInvitation({
                     email,
@@ -126,20 +124,6 @@ const invitationController = {
     acceptInvitation: async (req, res) => {
         try {
             const { token } = req.params;
-
-            // Add debug logging
-            console.log('Accepting invitation with token:', token);
-            console.log('Request headers:', req.headers);
-
-            // Safely log the request body
-            try {
-                console.log('Request body:', typeof req.body === 'object' ? JSON.stringify(req.body) : 'Not an object');
-            } catch (e) {
-                console.log('Error stringifying request body:', e);
-            }
-
-            console.log('User:', req.user);
-
             const invitation = await Invitation.findOne({
                 token,
                 accepted: false,
@@ -165,10 +149,6 @@ const invitationController = {
             if (req.user.email !== invitation.email) {
                 return res.status(403).json({ message: 'This invitation is for a different email address' });
             }
-
-            console.log('Found invitation:', invitation);
-            console.log('Setting user household from', req.user.household, 'to', invitation.household._id);
-
             // Update user's household
             req.user.household = invitation.household._id;
             await req.user.save();

@@ -9,8 +9,12 @@ import {
 } from '@mui/material';
 import { Person, Lock, DeleteOutline } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
-import * as userService from '../services/userService';
 import { useNavigate } from 'react-router-dom';
+import {
+    useUpdateUserProfileMutation,
+    useChangePasswordMutation,
+    useDeleteAccountMutation
+} from '../services/api/userApiSlice';
 
 // Validation schemas
 const profileSchema = Yup.object().shape({
@@ -37,7 +41,12 @@ const passwordSchema = Yup.object().shape({
 const ProfileSettings = () => {
     const { user, updateUser, logout } = useAuth();
     const navigate = useNavigate();
-    const [loading, setLoading] = useState(false);
+
+    // Use RTK Query hooks
+    const [updateProfile, { isLoading: isUpdating }] = useUpdateUserProfileMutation();
+    const [changePassword, { isLoading: isChangingPassword }] = useChangePasswordMutation();
+    const [deleteAccount, { isLoading: isDeleting }] = useDeleteAccountMutation();
+
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [tabValue, setTabValue] = useState(0);
@@ -53,44 +62,42 @@ const ProfileSettings = () => {
 
     const handleProfileUpdate = async (values, { setSubmitting }) => {
         try {
-            setLoading(true);
             setError('');
             setSuccess('');
 
-            const updatedUser = await userService.updateProfile({
+            // Use RTK Query mutation
+            const updatedUser = await updateProfile({
                 name: values.name,
                 email: values.email
-            });
+            }).unwrap();
 
             updateUser(updatedUser);
             setSuccess('Profile updated successfully');
         } catch (error) {
             console.error('Error updating profile:', error);
-            setError(error.response?.data?.message || 'Failed to update profile');
+            setError(error.data?.message || 'Failed to update profile');
         } finally {
-            setLoading(false);
             setSubmitting(false);
         }
     };
 
     const handlePasswordChange = async (values, { setSubmitting, resetForm }) => {
         try {
-            setLoading(true);
             setError('');
             setSuccess('');
 
-            await userService.changePassword({
+            // Use RTK Query mutation
+            await changePassword({
                 currentPassword: values.currentPassword,
                 newPassword: values.newPassword
-            });
+            }).unwrap();
 
             setSuccess('Password changed successfully');
             resetForm();
         } catch (error) {
             console.error('Error changing password:', error);
-            setError(error.response?.data?.message || 'Failed to change password');
+            setError(error.data?.message || 'Failed to change password');
         } finally {
-            setLoading(false);
             setSubmitting(false);
         }
     };
@@ -102,18 +109,17 @@ const ProfileSettings = () => {
         }
 
         try {
-            setLoading(true);
             setDeleteError('');
 
-            await userService.removeAccount();
+            // Use RTK Query mutation
+            await deleteAccount().unwrap();
 
             // Clear user data and redirect to home/login
             logout();
             navigate('/');
         } catch (error) {
             console.error('Error removing account:', error);
-            setDeleteError(error.response?.data?.message || 'Failed to remove account');
-            setLoading(false);
+            setDeleteError(error.data?.message || 'Failed to remove account');
         }
     };
 
@@ -200,10 +206,10 @@ const ProfileSettings = () => {
                                                 type="submit"
                                                 variant="contained"
                                                 color="primary"
-                                                disabled={isSubmitting || loading}
+                                                disabled={isSubmitting || isUpdating}
                                                 sx={{ mt: 2 }}
                                             >
-                                                {(isSubmitting || loading) ? (
+                                                {(isSubmitting || isUpdating) ? (
                                                     <CircularProgress size={24} />
                                                 ) : (
                                                     'Update Profile'
@@ -283,10 +289,10 @@ const ProfileSettings = () => {
                                                 type="submit"
                                                 variant="contained"
                                                 color="primary"
-                                                disabled={isSubmitting || loading}
+                                                disabled={isSubmitting || isChangingPassword}
                                                 sx={{ mt: 2 }}
                                             >
-                                                {(isSubmitting || loading) ? (
+                                                {(isSubmitting || isChangingPassword) ? (
                                                     <CircularProgress size={24} />
                                                 ) : (
                                                     'Change Password'
@@ -363,10 +369,10 @@ const ProfileSettings = () => {
                     <Button
                         onClick={handleDeleteAccount}
                         color="error"
-                        disabled={loading}
-                        startIcon={loading ? <CircularProgress size={20} /> : null}
+                        disabled={isDeleting}
+                        startIcon={isDeleting ? <CircularProgress size={20} /> : null}
                     >
-                        {loading ? 'Deleting...' : 'Delete Forever'}
+                        {isDeleting ? 'Deleting...' : 'Delete Forever'}
                     </Button>
                 </DialogActions>
             </Dialog>
